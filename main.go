@@ -1,10 +1,12 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"image"
 	"image/draw"
+	"image/jpeg"
 	"image/png"
 	"log"
 	"os"
@@ -18,18 +20,24 @@ import (
 )
 
 var (
-	flagTileSize   int
-	flagPattern    string
-	flagInterpFunc string
-	flagOutDir     string
+	flagTileSize    int
+	flagJpegQuality int
+	flagEncoding    string
+	flagPattern     string
+	flagInterpFunc  string
+	flagOutDir      string
 )
 
 func init() {
 	flag.IntVar(&flagTileSize, "size", 256, "tile size in pixels")
+	flag.IntVar(&flagJpegQuality, "q", 5, "jpeg quality setting")
+	flag.StringVar(&flagEncoding, "e", "png", "image encoding (png or jpeg)")
 	flag.StringVar(&flagPattern, "p", "{zoom}_{x}_{y}.png", "naming pattern for output files")
 	flag.StringVar(&flagInterpFunc, "interp", "Bicubic", "cropping interpolation function")
 	flag.StringVar(&flagOutDir, "o", "tiles", "output directory for tile files")
 }
+
+var validEncodings = []string{"png", "jpeg"}
 
 var interpFuncs = map[string]resize.InterpolationFunction{
 	"NearestNeighbor":   resize.NearestNeighbor,
@@ -53,6 +61,17 @@ func main() {
 		for fn := range interpFuncs {
 			fmt.Fprint(os.Stderr, " "+fn)
 		}
+	}
+
+	found := false
+	for _, enc := range validEncodings {
+		if enc == flagEncoding {
+			found = true
+			break
+		}
+	}
+	if !found {
+		log.Fatalln("unsupported encoding:", validEncodings)
 	}
 
 	args := flag.Args()
@@ -158,7 +177,15 @@ func Crop(img image.Image, tileSize, x, y, level int) {
 	}
 	defer f.Close()
 
-	if err := png.Encode(f, dst); err != nil {
+	switch flagEncoding {
+	case "png":
+		err = png.Encode(f, dst)
+	case "jpeg":
+		err = jpeg.Encode(f, dst, &jpeg.Options{Quality: flagJpegQuality})
+	default:
+		err = errors.New("encoding not supported")
+	}
+	if err != nil {
 		log.Println(err)
 	}
 }
